@@ -204,7 +204,7 @@ class Monitor(tk.Frame):
 			#a_temp = int(data[2])
 			#self.a_temp_label_text.set(str(a_temp))
 		except:
-			print "Error readding coms", sys.exc_info()
+			print("Error readding coms", sys.exc_info())
 
 		if(self.button_active() and not self.auto_flag):
 			self.temp_label_text.set(str(self.set_temp)+'c')

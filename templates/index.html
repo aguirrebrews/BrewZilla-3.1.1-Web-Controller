@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aguirre's BrewZilla Controller</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #121212; color: #ffffff; text-align: center; margin: 0; padding: 20px; }
+        .status-bar { display: flex; justify-content: space-between; font-size: 1.1em; margin-bottom: 20px; font-weight: bold; background: #1e1e1e; padding: 15px; border-radius: 8px; }
+        .connected { color: #4caf50; }
+        .disconnected { color: #f44336; }
+        #clock { color: #aaa; }
+        .panel { background: #1e1e1e; padding: 25px; border-radius: 12px; max-width: 650px; margin: auto; box-shadow: 0px 4px 15px rgba(0,0,0,0.5); }
+        .btn { padding: 15px 25px; font-size: 1.1em; margin: 5px; cursor: pointer; border: none; border-radius: 5px; color: white; font-weight: bold; transition: 0.2s; }
+        .btn:active { transform: scale(0.95); }
+        .btn-on { background-color: #4caf50; }
+        .btn-off { background-color: #f44336; }
+        .btn-blue { background-color: #2196f3; }
+        .btn-orange { background-color: #ff9800; }
+        .input-group { margin: 20px 0; }
+        input[type="number"] { padding: 12px; font-size: 1.2em; width: 120px; text-align: center; border-radius: 5px; border: none; background: #333; color: white; }
+        .controls-grid { display: flex; justify-content: center; flex-wrap: wrap; gap: 15px; margin-top: 20px; }
+        .control-box { border: 1px solid #333; padding: 15px; border-radius: 8px; background: #252525; }
+        .control-box h4 { margin: 0 0 15px 0; color: #aaa; text-transform: uppercase; letter-spacing: 1px; }
+    </style>
+</head>
+<body>
+    <div class="panel">
+        <div class="status-bar">
+            <span id="conn-status" class="disconnected">Arduino: Buscando...</span>
+            <span id="clock">--:--:--</span>
+        </div>
+        <h1 style="color: #ff9800; margin-bottom: 5px;">Aguirre's BrewZilla Controller</h1>
+        <div style="margin-bottom: 25px; color: #888; font-size: 0.95em;">
+            RAW ADC: <span id="raw-adc">--</span> | Lógica Calentador: <span id="heater-state">--</span>
+        </div>
+        <div style="display: flex; gap: 15px; justify-content: center; margin-bottom: 25px;">
+            <div style="flex: 1; background: #252525; padding: 15px; border-radius: 8px; border: 1px solid #333; text-align: center;">
+                <h4 style="margin: 0 0 5px 0; color: #aaa; font-size: 13px;">CURRENT TEMP</h4>
+                <div style="font-size: 36px; font-weight: bold; color: #00ffcc;"><span id="current-temp">--</span> &deg;F</div>
+            </div>
+            <div style="flex: 1; background: #252525; padding: 15px; border-radius: 8px; border: 1px solid #333; text-align: center;">
+                <h4 style="margin: 0 0 5px 0; color: #aaa; font-size: 13px;">CURRENT SET</h4>
+                <div style="font-size: 36px; font-weight: bold; color: #ff9900;"><span id="target-temp">--</span> &deg;F</div>
+            </div>
+        </div>
+        <div class="input-group">
+            <input type="number" id="target-input" placeholder="Temp F" step="0.5">
+            <button class="btn btn-blue" onclick="setTarget()">Fijar Target</button>
+        </div>
+        <div class="controls-grid">
+            <div class="control-box" style="border-color: #ff9800;">
+                <h4 style="color: #ff9800;">Buzzer (Test)</h4>
+                <button class="btn btn-on" onclick="sendCommand('BUZZ:ON')">ON</button>
+                <button class="btn btn-off" onclick="sendCommand('BUZZ:OFF')">OFF</button>
+            </div>
+            <div class="control-box">
+                <h4>Calentadores</h4>
+                <button class="btn btn-on" onclick="sendCommand('H:1')">AUTO</button>
+                <button class="btn btn-off" onclick="sendCommand('H:0')">OFF</button>
+                <button class="btn btn-orange" onclick="sendCommand('H:H')">BOIL</button>
+            </div>
+        </div>
+    </div>
+    <script>
+        setInterval(() => {
+            const now = new Date();
+            document.getElementById('clock').innerText = now.toLocaleTimeString('en-US', {
+                hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true
+            });
+        }, 1000);
+
+        function sendCommand(cmd) {
+            fetch('/api/command', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ command: cmd })
+            }).catch(console.error);
+        }
+
+        function setTarget() {
+            const val = document.getElementById('target-input').value;
+            if(val) sendCommand('SET:' + val);
+        }
+
+        setInterval(() => {
+            fetch('/api/status')
+                .then(r => r.json())
+                .then(data => {
+                    const nowStr = new Date().toLocaleTimeString('en-US', {
+                        hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true
+                    });
+                    const connEl = document.getElementById('conn-status');
+                    if (data.connected) {
+                        connEl.innerText = `Arduino: Conectado (${nowStr})`;
+                        connEl.className = 'connected';
+                    } else {
+                        connEl.innerText = `Arduino: Desconectado (${nowStr})`;
+                        connEl.className = 'disconnected';
+                    }
+                    document.getElementById('current-temp').innerText = data.T !== undefined ? data.T.toFixed(1) : "--";
+                    document.getElementById('target-temp').innerText = data.SET !== undefined ? data.SET.toFixed(1) : "--";
+                    document.getElementById('raw-adc').innerText = data.RAW !== undefined ? data.RAW : "--";
+                    let hState = "OFF";
+                    if(data.H === "1") hState = "AUTO";
+                    if(data.H === "H") hState = "BOIL MODE";
+                    document.getElementById('heater-state').innerText = hState;
+                })
+                .catch(console.error);
+        }, 1000);
+    </script>
+</body>
+</html>
