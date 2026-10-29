@@ -87,6 +87,15 @@
             fetch('/api/status')
                 .then(r => r.json())
                 .then(data => {
+                    if (data.sys_uptime) {
+                        const elSys = document.getElementById("sys-uptime");
+                        const elSvc = document.getElementById("svc-uptime");
+                        const elSt = document.getElementById("svc-start");
+                        if (elSys) elSys.innerText = data.sys_uptime;
+                        if (elSvc) elSvc.innerText = data.svc_uptime;
+                        if (elSt) elSt.innerText = data.service_start;
+                    }
+
                     const nowStr = new Date().toLocaleTimeString('en-US', {
                         hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true
                     });
@@ -109,5 +118,10 @@
                 .catch(console.error);
         }, 1000);
     </script>
+
+<div id="uptime-footer" style="text-align: center; font-size: 0.75rem; color: #888888; margin-top: 25px; margin-bottom: 15px; font-family: monospace;">
+    Pi Uptime: <span id="sys-uptime">--</span> | Web Uptime: <span id="svc-uptime">--</span> (Since: <span id="svc-start">--</span>)
+</div>
+
 </body>
 </html>
