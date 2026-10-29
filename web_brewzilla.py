@@ -1,4 +1,7 @@
 import os
+import time
+from datetime import datetime
+SERVICE_START_TIME = datetime.now()
 import threading
 import time
 import serial
@@ -387,6 +390,10 @@ HTML_TEMPLATE = """
             fetch('/api/status')
                 .then(res => res.json())
                 .then(data => {
+                    if (data.sys_uptime) document.getElementById("sys-uptime").innerText = data.sys_uptime;
+                    if (data.svc_uptime) document.getElementById("svc-uptime").innerText = data.svc_uptime;
+                    if (data.service_start) document.getElementById("svc-start").innerText = data.service_start;
+
                     document.getElementById('temp-val-adv').innerText = data.temp_actual.toFixed(1);
                     document.getElementById('temp-set-adv').innerText = data.temp_objetivo.toFixed(1);
                     document.getElementById('raw-adc').innerText = data.raw;
@@ -622,7 +629,7 @@ HTML_TEMPLATE = """
         updateStatus();
         renderSteps();
     </script>
-</body>
+<div id="uptime-footer" style="text-align: center; font-size: 0.75rem; color: #888888; margin-top: 25px; margin-bottom: 15px; font-family: monospace;">Pi Uptime: <span id="sys-uptime">--</span> | Web Uptime: <span id="svc-uptime">--</span> (Since: <span id="svc-start">--</span>)</div>\n</body>
 </html>
 """
 
@@ -632,6 +639,10 @@ def index():
 
 @app.route('/api/status')
 def get_status():
+    sys_u, svc_u, st = get_uptimes()
+    state["sys_uptime"] = sys_u
+    state["svc_uptime"] = svc_u
+    state["service_start"] = st
     return jsonify(state)
 
 @app.route('/api/delay/toggle', methods=['POST'])
@@ -785,3 +796,25 @@ if __name__ == '__main__':
     cert_path = '/home/pi/BrewZilla/certs/brewzilla.local+3.pem'
     key_path = '/home/pi/BrewZilla/certs/brewzilla.local+3-key.pem'
     app.run(host='0.0.0.0', port=443, ssl_context=(cert_path, key_path), threaded=True, debug=False)
+
+def get_uptimes():
+    # Uptime del sistema operativo (Raspberry Pi)
+    try:
+        with open('/proc/uptime', 'r') as f:
+            sys_seconds = float(f.readline().split()[0])
+            sys_days = int(sys_seconds // 86400)
+            sys_hours = int((sys_seconds % 86400) // 3600)
+            sys_mins = int((sys_seconds % 3600) // 60)
+            sys_str = f"{sys_days}d {sys_hours}h {sys_mins}m" if sys_days > 0 else f"{sys_hours}h {sys_mins}m"
+    except Exception:
+        sys_str = "N/A"
+
+    # Uptime del servicio de Python/Gunicorn
+    svc_seconds = (datetime.now() - SERVICE_START_TIME).total_seconds()
+    svc_days = int(svc_seconds // 86400)
+    svc_hours = int((svc_seconds % 86400) // 3600)
+    svc_mins = int((svc_seconds % 3600) // 60)
+    svc_str = f"{svc_days}d {svc_hours}h {svc_mins}m" if svc_days > 0 else f"{svc_hours}h {svc_mins}m"
+
+    start_date_str = SERVICE_START_TIME.strftime("%m/%d/%Y - %I:%M %p")
+    return sys_str, svc_str, start_date_str
