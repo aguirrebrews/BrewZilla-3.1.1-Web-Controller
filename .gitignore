@@ -1,4 +1,5 @@
 certs/
-*.pyc
+*.tar.gz
+*.pem
+*.key
 __pycache__/
-*.log
