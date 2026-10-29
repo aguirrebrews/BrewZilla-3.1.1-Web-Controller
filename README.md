@@ -1,46 +1,71 @@
-# BrewZilla 3.1.1 Web Controller v0.9.1 🍺
-
-A custom, robust Flask/Gunicorn web interface and automation controller for the **BrewZilla 3.1.1 All-in-One Homebrew System**, running on a Raspberry Pi with serial communication to an Arduino Nano.
-
+BrewZilla 3.1.1 Web Controller v0.9.1 🍺
+A custom, robust Flask/Gunicorn web interface and automation controller for the BrewZilla 3.1.1 All-in-One Homebrew System, running on a Raspberry Pi with serial communication to an Arduino Nano.
 ---
-
-## 💡 About This Project & Acknowledgments
-
-This project represents a complete transformation and modern overhaul of the original factory controller for the **BrewZilla 3.1.1**. The original concept and a significant portion of the foundational code were derived from the open-source project by [BetterRobotics](https://github.com/BetterRobotics). We extend our sincere gratitude and appreciation to the BetterRobotics team for providing the initial inspiration, framework, and codebase that made this effort possible.
-
+💡 About This Project & Acknowledgments
+This project represents a complete transformation and modern overhaul of the original factory controller for the BrewZilla 3.1.1. The original concept and a significant portion of the foundational codebase were derived from the open-source project by BetterRobotics. We extend our sincere gratitude and appreciation to the BetterRobotics team for providing the initial inspiration, framework, and codebase that made this effort possible.
 Over time, however, the software architecture, safety protocols, user interface, and hardware integration have been substantially rewritten, optimized, and expanded. It has evolved into a fully independent, standalone homebrew automation system designed specifically for high operational reliability, precise thermal control, and secure web access.
-
 ---
-
-## 🛠 What This Project Represents & Does
-
-The **BrewZilla 3.1.1 Web Controller** bypasses the original factory panel to provide a high-performance **SBC (Raspberry Pi) + Microcontroller (Arduino Nano)** hybrid control system:
-
-- **Hardware Fail-Safe & Watchdog Protection:** Uses an AVR Watchdog timer and serial heartbeat mechanism to instantly cut power to heating elements if the web application or network connection drops.
-- **Precision Thermal Control:** Reads the kettle's original NTC probe through custom piecewise linear calibration and hysteresis logic to eliminate temperature overshoot during mashing.
-- **Automated Multi-Step Mashing:** Features a fully programmable 5-step mash profile (*Strike Heat, Mash, Mash Out, Boil Warmup, Boil*) with target updates, step countdowns, and audible alerts.
-- **Delayed Start Timer:** Allows brewers to schedule an automatic pre-heating time (e.g., `06:00 AM`) so strike water is ready as soon as the brew day begins.
-- **Dual Display Modes (HTTPS):**
-  - **ADVANCED View:** Modern interactive web dashboard with live ADC RAW telemetries, progress spinners, temperature target setters, and system status indicators.
-  - **CLASSIC View:** Nostalgic LCD 20x4 simulation with physical button-like navigation.
-- **Production-Grade Web Server:** Runs on Flask + Gunicorn WSGI managed by Systemd over HTTPS (Port 443), with automatic Wi-Fi power-saving disabling to prevent connection drops during long brew sessions.
-
+🛠 Required Equipment & Minimalist Hardware Setup
+One of the main advantages of this project is its minimalist hardware footprint. You do not need extra power relays, solid-state relays (SSRs), or external power control modules, as the software hooks directly into the native internal relays, NTC temperature probe, and buzzer built into the BrewZilla unit.
+🛒 Equipment List
+Single-Board Computer (SBC): Raspberry Pi 3B, 4B, or Zero 2 W running Debian/Raspberry Pi OS.
+Microcontroller: Arduino Nano (ATmega328P).
+Screw Terminal Expansion Shield: Pre-soldered breakout board for Arduino Nano (allows clean, reliable screw-terminal wire hookups without soldering directly to the MCU).
+Jumper Wires: Dupont jumper wires (Female-to-Female / Male-to-Female).
+USB Cable: USB-A to Mini-USB data cable (connecting Raspberry Pi to Arduino Nano).
+BrewZilla 3.1.1 System: Uses native internal heating elements, internal relays, NTC probe, and passive buzzer.
 ---
-
-## Key Features
-
-- **Dual Display Modes:**
-  - **ADVANCED View:** Full modern web dashboard with multi-step mash profile programming, delayed start timer, live ADC RAW monitoring, and direct target controls.
-  - **CLASSIC View:** Retro LCD 20x4 style simulation with physical button-like controls for seamless brewing.
-- **5-Step Mash Profile Automation:** Programmable multi-step mashing (Strike Heat, Mash, Mash Out, Boil Warmup, Boil) with countdown timers and automated target temperature updates.
-- **Delayed Start Timer:** Set a specific time (e.g., `06:00 AM`) to automatically start pre-heating your strike water.
-- **Hardware Fallback & Crash Prevention:** `try/except` validated API commands and serial line communication prevent Gunicorn/Flask worker crashes on invalid or missing web payloads.
-- **Persistent Network Stability:** Disables Wi-Fi power saving mode (`Power save: off`) to prevent SSH/Web connectivity drops during long brewing days.
-- **SSL / HTTPS Support:** Built-in self-signed certificates for secure local network control (`https://<raspberry-pi-ip>`).
-
+✨ Key Features
+Dual Display Modes:
+ADVANCED View: Modern web dashboard with multi-step mash profile programming, delayed start timer, live ADC RAW monitoring, and direct target controls.
+CLASSIC View: Retro LCD 20x4 style simulation with physical button-like controls for seamless brewing.
+5-Step Mash Profile Automation: Programmable multi-step mashing (Strike Heat, Mash, Mash Out, Boil Warmup, Boil) with countdown timers and automated target temperature updates.
+Delayed Start Timer: Set a specific time (e.g., `06:00 AM`) to automatically start pre-heating your strike water.
+Hardware Fail-Safe & Watchdog Protection: Embedded AVR Watchdog timer (2s) and serial heartbeat logic (30s) instantly cut power to heating elements if the web application or serial link disconnects.
+Persistent Network Stability: Disables Wi-Fi power-saving mode (`Power save: off`) to prevent SSH/Web connectivity drops during long brewing days.
+SSL / HTTPS Support: Built-in self-signed certificates for secure local network control (`https://<raspberry-pi-ip>`).
 ---
-
-## Hardware Architecture
-
-- **SBC:** Raspberry Pi 3B / 4B / Zero 2 W running Debian/Raspberry Pi OS.
-- **Microcontroller:** Arduino Nano (ATmega328P) connected via USB Serial (`/dev/ttyUSB0
+📐 Hardware Architecture
+SBC: Raspberry Pi 3B / 4B / Zero 2 W running Debian/Raspberry Pi OS.
+Microcontroller: Arduino Nano (ATmega328P) connected via USB Serial (`/dev/ttyUSB0` @ 9600 baud).
+Expansion Board: Pre-soldered Arduino Nano screw terminal breakout board.
+Relays: BrewZilla native internal dual relay outputs for kettle heating elements.
+Sensors: BrewZilla native NTC Thermistor / Temperature Probe connected to Arduino ADC A0.
+---
+📁 Repository Structure
+```text
+├── web_brewzilla.py         # Main Flask/Gunicorn Web Application & API
+├── web_brewzilla_GOLDEN.py  # Verified stable production backup file
+├── firmware/
+│   └── firmware.ino        # Arduino Nano serial interface sketch
+├── certs/                   # SSL/TLS certificates for HTTPS (Not tracked)
+├── .gitignore               # Excludes secrets, certificates, and backups
+├── INSTALL.md               # Hardware & replication guide
+└── README.md                # Project documentation
+```
+---
+🚀 Quick Installation Guide
+For detailed hardware wiring and step-by-step setup instructions, please see INSTALL.md.
+Clone the repository:
+```bash
+   git clone git@github.com:aguirrebrews/BrewZilla-3.1.1-Web-Controller.git ~/BrewZilla
+   cd ~/BrewZilla
+   ```
+Install Python Dependencies:
+```bash
+   sudo apt update
+   sudo apt install -y python3-flask python3-serial gunicorn
+   ```
+Configure Systemd Web Service:
+```bash
+   sudo cp systemd/brewzilla-web.service /etc/systemd/system/
+   sudo systemctl daemon-reload
+   sudo systemctl enable brewzilla-web
+   sudo systemctl start brewzilla-web
+   ```
+Access the Web Interface:
+Open your browser and navigate to `https://<YOUR_PI_IP>` (e.g., `https://192.168.68.5`).
+---
+🤝 Contributing & Replicating
+Feel free to fork this project, open issues, or submit pull requests to improve the BrewZilla automation workflow!
+Special thanks to BetterRobotics for inspiring the original foundation of this work. 🍻
