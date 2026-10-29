@@ -1,4 +1,4 @@
-# BrewZilla 3.1.1 Web Controller 🍺
+# BrewZilla 3.1.1 Web Controller v0.9.1 🍺
 
 A custom, robust Flask/Gunicorn web interface and automation controller for the BrewZilla 3.1.1 All-in-One Homebrew System, running on a Raspberry Pi with serial communication to an Arduino Nano.
 
