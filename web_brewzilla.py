@@ -39,7 +39,7 @@ ser = None
 def serial_loop():
     global ser, state
     last_ping_time = time.time()
-    
+
     while True:
         if ser is None or not ser.is_open:
             try:
@@ -94,7 +94,7 @@ def sequence_loop():
     while True:
         time.sleep(1)
         if state["sequence_active"]:
-            
+
             if state["waiting_for_delay"]:
                 current_time_str = time.strftime("%H:%M")
                 if current_time_str == state["delayed_start_time"]:
@@ -171,7 +171,7 @@ HTML_TEMPLATE = """
         .offline { background: #c62828; color: #fff; }
         .meta-info { margin-top: 4px; font-size: 0.85rem; color: #aaa; font-weight: 500; }
         .card { background: #1e1e1e; border-radius: 12px; padding: 18px; margin: 12px auto; max-width: 450px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
-        
+
         .temp-display-box {
             display: flex;
             justify-content: space-around;
@@ -227,7 +227,7 @@ HTML_TEMPLATE = """
         .hidden { display: none !important; }
         table { width: 100%; margin-top: 10px; border-collapse: collapse; font-size: 0.85rem; }
         th, td { padding: 6px; border-bottom: 1px solid #333; }
-        
+
         .delay-box { background: #2a2a2a; border-radius: 8px; padding: 10px; margin: 10px 0 12px 0; border: 1px solid #444; text-align: left; }
     </style>
 </head>
@@ -300,18 +300,18 @@ HTML_TEMPLATE = """
 
         <div id="card-programmer" class="card hidden">
             <h3>MASH STEPS PROGRAMMER</h3>
-            
+
             <p style="margin: 6px 0;">Status: <b id="seq-status">Inactive</b></p>
             <p style="margin: 4px 0; font-size: 0.95rem; color: #2196f3;">Current Step: <b id="seq-step-info">--</b></p>
             <p style="margin: 4px 0; font-size: 0.9rem; color: #aaa;">Elapsed: <b id="seq-elapsed">[00:00:00 / 00:00:00]</b></p>
             <p style="margin: 4px 0 6px 0; font-size: 0.9rem; color: #ff9800;">Time Left: <b id="seq-timer">00:00:00</b></p>
-            
+
             <div class="delay-box">
                 <label style="font-size: 0.9rem; font-weight: bold; cursor: pointer;">
                     <input type="checkbox" id="chk-delay" onchange="toggleDelay(this.checked)"> Enable Delayed Start
                 </label>
                 <div style="margin-top: 6px; font-size: 0.85rem; color: #bbb;">
-                    Start Heating At: 
+                    Start Heating At:
                     <input type="time" id="time-delay" value="06:00" onchange="updateDelayTime(this.value)">
                 </div>
             </div>
@@ -678,7 +678,7 @@ def toggle_boil():
             ser.write(cmd.encode('utf-8'))
         except Exception as e:
             pass
-            
+
     return jsonify({"success": True, "boil_mode": state["boil_mode"], "heater": state["heater"]})
 
 @app.route('/api/sequence/toggle', methods=['POST'])
@@ -691,7 +691,7 @@ def toggle_sequence():
         first_step = state["steps"][0]
         state["step_total_time"] = (first_step["hours"] * 3600) + (first_step["mins"] * 60)
         state["step_time_remaining"] = state["step_total_time"]
-        
+
         # Si NO hay delay, encendemos el calentador de inmediato
         if not state["waiting_for_delay"]:
             state["heater"] = True
@@ -760,10 +760,13 @@ def send_command():
             cmd = f"H:{1 if state['heater'] else 0}\n"
     elif action == "SET_TEMP":
         val = data.get("value", 163.0)
-        state["temp_objetivo"] = val
+        try:
+            state["temp_objetivo"] = float(val)
+            cmd = f"SET:{state['temp_objetivo']:.1f}\n"
+        except (ValueError, TypeError):
+            pass
         state["sequence_active"] = False
         state["waiting_for_delay"] = False
-        cmd = f"SET:{val}\n"
 
     if ser and ser.is_open and cmd:
         try:
