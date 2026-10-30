@@ -1,9 +1,11 @@
 import os
 import threading
 import time
+from datetime import datetime, timedelta
 import serial
 from flask import Flask, render_template_string, jsonify, request
 
+SERVICE_START_TIME = datetime.now()
 app = Flask(__name__)
 
 # Estado global del sistema
@@ -35,9 +37,37 @@ state = {
 }
 
 ser = None
+last_cmd_time = 0.0
+
+def get_uptimes():
+    # Uptime del sistema operativo (Raspberry Pi)
+    try:
+        with open('/proc/uptime', 'r') as f:
+            sys_seconds = float(f.readline().split()[0])
+            sys_days = int(sys_seconds // 86400)
+            sys_hours = int((sys_seconds % 86400) // 3600)
+            sys_mins = int((sys_seconds % 3600) // 60)
+            sys_str = f"{sys_days}d {sys_hours}h {sys_mins}m" if sys_days > 0 else f"{sys_hours}h {sys_mins}m"
+            
+            # Hora y fecha exacta de arranque de la Raspberry Pi
+            pi_boot_time = datetime.now() - timedelta(seconds=sys_seconds)
+            pi_boot_str = pi_boot_time.strftime("%m/%d/%Y - %I:%M %p")
+    except Exception:
+        sys_str = "N/A"
+        pi_boot_str = "N/A"
+
+    # Uptime del servicio de Python/Gunicorn
+    svc_seconds = (datetime.now() - SERVICE_START_TIME).total_seconds()
+    svc_days = int(svc_seconds // 86400)
+    svc_hours = int((svc_seconds % 86400) // 3600)
+    svc_mins = int((svc_seconds % 3600) // 60)
+    svc_str = f"{svc_days}d {svc_hours}h {svc_mins}m" if svc_days > 0 else f"{svc_hours}h {svc_mins}m"
+
+    start_date_str = SERVICE_START_TIME.strftime("%m/%d/%Y - %I:%M %p")
+    return sys_str, svc_str, start_date_str, pi_boot_str
 
 def serial_loop():
-    global ser, state
+    global ser, state, last_cmd_time
     last_ping_time = time.time()
 
     while True:
@@ -55,6 +85,7 @@ def serial_loop():
             if ser and ser.is_open:
                 try:
                     ser.write(b"PING\n")
+                    ser.flush()
                 except Exception:
                     pass
 
@@ -70,11 +101,13 @@ def serial_loop():
                             if k == 'T': state["temp_actual"] = float(v)
                             elif k == 'SET': state["temp_objetivo"] = float(v)
                             elif k == 'H':
-                                if v == 'H':
-                                    state["heater"] = True
-                                    state["boil_mode"] = True
-                                else:
-                                    state["heater"] = (v == '1')
+                                # Protección anti-rebote: Ignora ecos del serial dentro de 2s tras enviar un comando
+                                if time.time() - last_cmd_time > 2.0:
+                                    if v == 'H':
+                                        state["heater"] = True
+                                        state["boil_mode"] = True
+                                    else:
+                                        state["heater"] = (v == '1')
                             elif k == 'P': state["pump"] = (v == '1')
                             elif k == 'RAW': state["raw"] = float(v)
                         except ValueError:
@@ -90,30 +123,44 @@ def serial_loop():
             time.sleep(1)
 
 def sequence_loop():
-    global state, ser
+    global state, ser, last_cmd_time
     while True:
         time.sleep(1)
         if state["sequence_active"]:
 
             if state["waiting_for_delay"]:
-                current_time_str = time.strftime("%H:%M")
-                if current_time_str == state["delayed_start_time"]:
-                    state["waiting_for_delay"] = False
-                    state["heater"] = True
-                    if ser and ser.is_open:
-                        try:
-                            ser.write(b"H:1\n") # <-- AQUÍ SE ENCIENDE EL CALENTADOR A LA HORA PROGRAMADA
-                        except Exception:
-                            pass
-                else:
-                    if state["heater"]:
-                        state["heater"] = False
+                now = datetime.now()
+                try:
+                    hr, mn = map(int, state["delayed_start_time"].split(':'))
+                    target = now.replace(hour=hr, minute=mn, second=0, microsecond=0)
+                    
+                    if target < now - timedelta(hours=12):
+                        target += timedelta(days=1)
+                    
+                    # Gracia de 2 horas en caso de reinicio de la Pi
+                    if target <= now <= target + timedelta(hours=2):
+                        state["waiting_for_delay"] = False
+                        state["heater"] = True
+                        last_cmd_time = time.time()
                         if ser and ser.is_open:
                             try:
-                                ser.write(b"H:0\n")
+                                ser.write(b"H:1\n")
+                                ser.flush()
                             except Exception:
                                 pass
-                    continue
+                    else:
+                        if state["heater"]:
+                            state["heater"] = False
+                            last_cmd_time = time.time()
+                            if ser and ser.is_open:
+                                try:
+                                    ser.write(b"H:0\n")
+                                    ser.flush()
+                                except Exception:
+                                    pass
+                except Exception:
+                    pass
+                continue
 
             step_idx = state["current_step"]
             if step_idx < len(state["steps"]):
@@ -128,9 +175,11 @@ def sequence_loop():
 
                 if state["temp_objetivo"] != current_s["temp"]:
                     state["temp_objetivo"] = current_s["temp"]
+                    last_cmd_time = time.time()
                     if ser and ser.is_open:
                         try:
                             ser.write(f"SET:{current_s['temp']}\n".encode('utf-8'))
+                            ser.flush()
                         except Exception:
                             pass
 
@@ -140,6 +189,7 @@ def sequence_loop():
                     if ser and ser.is_open:
                         try:
                             ser.write(b"CHINGATU\n")
+                            ser.flush()
                         except Exception:
                             pass
 
@@ -150,8 +200,8 @@ def sequence_loop():
                         state["step_time_remaining"] = state["step_total_time"]
                     else:
                         state["sequence_active"] = False
-            else:
-                state["sequence_active"] = False
+        else:
+            state["sequence_active"] = False
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -173,14 +223,8 @@ HTML_TEMPLATE = """
         .card { background: #1e1e1e; border-radius: 12px; padding: 18px; margin: 12px auto; max-width: 450px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
 
         .temp-display-box {
-            display: flex;
-            justify-content: space-around;
-            align-items: center;
-            background: #252525;
-            padding: 12px;
-            border-radius: 10px;
-            margin: 8px 0 12px 0;
-            border: 1px solid #333;
+            display: flex; justify-content: space-around; align-items: center;
+            background: #252525; padding: 12px; border-radius: 10px; margin: 8px 0 12px 0; border: 1px solid #333;
         }
         .temp-col { flex: 1; }
         .temp-label { font-size: 0.75rem; color: #aaa; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
@@ -387,9 +431,19 @@ HTML_TEMPLATE = """
             fetch('/api/status')
                 .then(res => res.json())
                 .then(data => {
-                    document.getElementById('temp-val-adv').innerText = data.temp_actual.toFixed(1);
-                    document.getElementById('temp-set-adv').innerText = data.temp_objetivo.toFixed(1);
-                    document.getElementById('raw-adc').innerText = data.raw;
+                    // Actualización de tiempos Uptime en pantalla
+                    if (data.sys_uptime) document.getElementById("sys-uptime").innerText = data.sys_uptime;
+                    if (data.pi_boot_time) document.getElementById("pi-boot").innerText = data.pi_boot_time;
+                    if (data.svc_uptime) document.getElementById("svc-uptime").innerText = data.svc_uptime;
+                    if (data.service_start) document.getElementById("svc-start").innerText = data.service_start;
+
+                    const tempAct = data.temp_actual !== undefined ? data.temp_actual : data.T;
+                    const tempSet = data.temp_objetivo !== undefined ? data.temp_objetivo : data.SET;
+                    const rawVal = data.raw !== undefined ? data.raw : data.RAW;
+
+                    document.getElementById('temp-val-adv').innerText = tempAct !== undefined ? Number(tempAct).toFixed(1) : "---.-";
+                    document.getElementById('temp-set-adv').innerText = tempSet !== undefined ? Number(tempSet).toFixed(1) : "---.-";
+                    document.getElementById('raw-adc').innerText = rawVal !== undefined ? rawVal : "--";
 
                     const valStrike = parseFloat(document.getElementById('target-strike')?.value || 163);
                     const valMash = parseFloat(document.getElementById('target-mash')?.value || 152);
@@ -400,9 +454,9 @@ HTML_TEMPLATE = """
                     const spMashout = document.getElementById('spinner-mashout');
 
                     if (data.heater) {
-                        if (Math.abs(data.temp_objetivo - valStrike) < 0.5) spStrike?.classList.remove('hidden'); else spStrike?.classList.add('hidden');
-                        if (Math.abs(data.temp_objetivo - valMash) < 0.5) spMash?.classList.remove('hidden'); else spMash?.classList.add('hidden');
-                        if (Math.abs(data.temp_objetivo - valMashout) < 0.5) spMashout?.classList.remove('hidden'); else spMashout?.classList.add('hidden');
+                        if (Math.abs(tempSet - valStrike) < 0.5) spStrike?.classList.remove('hidden'); else spStrike?.classList.add('hidden');
+                        if (Math.abs(tempSet - valMash) < 0.5) spMash?.classList.remove('hidden'); else spMash?.classList.add('hidden');
+                        if (Math.abs(tempSet - valMashout) < 0.5) spMashout?.classList.remove('hidden'); else spMashout?.classList.add('hidden');
                     } else {
                         spStrike?.classList.add('hidden');
                         spMash?.classList.add('hidden');
@@ -475,8 +529,8 @@ HTML_TEMPLATE = """
                     document.getElementById('seq-elapsed').innerText = '[' + formatTime(elapsed) + ' / ' + formatTime(total) + ']';
                     document.getElementById('seq-timer').innerText = formatTime(remaining);
 
-                    document.getElementById('lcd-temp-actual').innerText = Math.round(data.temp_actual);
-                    document.getElementById('lcd-temp-target').innerText = Math.round(data.temp_objetivo);
+                    document.getElementById('lcd-temp-actual').innerText = Math.round(tempAct);
+                    document.getElementById('lcd-temp-target').innerText = Math.round(tempSet);
                     document.getElementById('lcd-mode').innerText = data.mode;
                     document.getElementById('lcd-step').innerText = data.sequence_active ? ('S' + (data.current_step + 1)) : 'MAN';
                     document.getElementById('lcd-timer').innerText = formatTime(remaining).substring(3);
@@ -609,7 +663,8 @@ HTML_TEMPLATE = """
 
         function adjustTemp(amount) {
             fetch('/api/status').then(res => res.json()).then(data => {
-                let newTarget = data.temp_objetivo + amount;
+                let currentT = data.temp_objetivo !== undefined ? data.temp_objetivo : data.SET;
+                let newTarget = currentT + amount;
                 fetch('/api/command', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
@@ -622,6 +677,10 @@ HTML_TEMPLATE = """
         updateStatus();
         renderSteps();
     </script>
+
+    <div id="uptime-footer" style="text-align: center; font-size: 0.75rem; color: #888888; margin-top: 25px; margin-bottom: 15px; font-family: monospace;">
+        Pi Uptime: <span id="sys-uptime">--</span> (Boot: <span id="pi-boot">--</span>) | Web Uptime: <span id="svc-uptime">--</span> (Since: <span id="svc-start">--</span>)
+    </div>
 </body>
 </html>
 """
@@ -632,6 +691,11 @@ def index():
 
 @app.route('/api/status')
 def get_status():
+    sys_u, svc_u, st, pi_boot = get_uptimes()
+    state["sys_uptime"] = sys_u
+    state["svc_uptime"] = svc_u
+    state["service_start"] = st
+    state["pi_boot_time"] = pi_boot
     return jsonify(state)
 
 @app.route('/api/delay/toggle', methods=['POST'])
@@ -663,8 +727,10 @@ def toggle_mode():
 
 @app.route('/api/boil/toggle', methods=['POST'])
 def toggle_boil():
-    global ser, state
+    global ser, state, last_cmd_time
     state["boil_mode"] = not state["boil_mode"]
+    last_cmd_time = time.time()
+    
     if state["boil_mode"]:
         state["heater"] = True
         state["temp_objetivo"] = 212.0
@@ -676,14 +742,15 @@ def toggle_boil():
     if ser and ser.is_open:
         try:
             ser.write(cmd.encode('utf-8'))
-        except Exception as e:
+            ser.flush()
+        except Exception:
             pass
 
     return jsonify({"success": True, "boil_mode": state["boil_mode"], "heater": state["heater"]})
 
 @app.route('/api/sequence/toggle', methods=['POST'])
 def toggle_sequence():
-    global ser, state
+    global ser, state, last_cmd_time
     state["sequence_active"] = not state["sequence_active"]
     if state["sequence_active"]:
         state["current_step"] = 0
@@ -692,12 +759,13 @@ def toggle_sequence():
         state["step_total_time"] = (first_step["hours"] * 3600) + (first_step["mins"] * 60)
         state["step_time_remaining"] = state["step_total_time"]
 
-        # Si NO hay delay, encendemos el calentador de inmediato
         if not state["waiting_for_delay"]:
             state["heater"] = True
+            last_cmd_time = time.time()
             if ser and ser.is_open:
                 try:
                     ser.write(b"H:1\n")
+                    ser.flush()
                 except Exception:
                     pass
     else:
@@ -706,7 +774,7 @@ def toggle_sequence():
 
 @app.route('/api/sequence/jump', methods=['POST'])
 def jump_step():
-    global ser, state
+    global ser, state, last_cmd_time
     data = request.get_json() or {}
     idx = data.get('index', 0)
     if 0 <= idx < len(state["steps"]):
@@ -719,21 +787,27 @@ def jump_step():
         state["step_time_remaining"] = state["step_total_time"]
         state["temp_objetivo"] = step["temp"]
         state["heater"] = True
+        last_cmd_time = time.time()
+        
         if ser and ser.is_open:
             try:
                 ser.write(f"SET:{step['temp']}\nH:1\n".encode('utf-8'))
+                ser.flush()
             except Exception:
                 pass
     return jsonify({"success": True, "state": state})
 
 @app.route('/api/shutdown', methods=['POST'])
 def shutdown_pi():
-    global ser, state
+    global ser, state, last_cmd_time
     state["heater"] = False
     state["boil_mode"] = False
+    last_cmd_time = time.time()
+    
     if ser and ser.is_open:
         try:
             ser.write(b"H:0\n")
+            ser.flush()
         except Exception:
             pass
 
@@ -746,7 +820,7 @@ def shutdown_pi():
 
 @app.route('/api/command', methods=['POST'])
 def send_command():
-    global ser, state
+    global ser, state, last_cmd_time
     data = request.get_json() or {}
     cmd = ""
     action = data.get("action")
@@ -758,11 +832,14 @@ def send_command():
             if not state["heater"]:
                 state["boil_mode"] = False
             cmd = f"H:{1 if state['heater'] else 0}\n"
+            last_cmd_time = time.time()
+            
     elif action == "SET_TEMP":
         val = data.get("value", 163.0)
         try:
             state["temp_objetivo"] = float(val)
             cmd = f"SET:{state['temp_objetivo']:.1f}\n"
+            last_cmd_time = time.time()
         except (ValueError, TypeError):
             pass
         state["sequence_active"] = False
@@ -771,7 +848,8 @@ def send_command():
     if ser and ser.is_open and cmd:
         try:
             ser.write(cmd.encode('utf-8'))
-        except Exception as e:
+            ser.flush()
+        except Exception:
             pass
 
     return jsonify({"success": True, "state": state})
