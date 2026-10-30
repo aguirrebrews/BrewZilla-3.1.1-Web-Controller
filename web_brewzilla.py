@@ -238,33 +238,11 @@ HTML_TEMPLATE = """
         .btn-boil.active { background: #d32f2f; color: #fff; border-color: #ff5252; box-shadow: 0 0 15px #ff5252; }
         .btn-mode { background: #161616; color: #aaa; }
         .btn-mode.auto { background: #00897b; color: #fff; border-color: #26a69a; box-shadow: 0 0 12px #00897b; }
-        .btn-view { background: #37474f; color: #fff; border-color: #546e7a; padding: 10px; font-size: 0.9rem; }
         .btn-shutdown { background: #b71c1c; color: #fff; border-color: #f44336; padding: 10px; font-size: 0.9rem; }
         .btn-start { background: #2e7d32; color: #fff; border: none; }
         .btn-stop { background: #c62828; color: #fff; border: none; }
         input[type=number], input[type=time] { padding: 5px; font-size: 0.95rem; border-radius: 6px; border: none; text-align: center; background: #333; color: #fff; }
         .target-row { margin: 6px 0; display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem; }
-
-        .classic-panel {
-            background: #111; border: 4px solid #333; border-radius: 30px; padding: 20px;
-            max-width: 600px; margin: 15px auto; box-shadow: 0 10px 30px rgba(0,0,0,0.8);
-            display: flex; align-items: center; justify-content: space-between;
-        }
-        .classic-side { display: flex; flex-direction: column; gap: 10px; width: 85px; }
-        .c-btn {
-            background: #1e1e1e; color: #fff; border: 2px solid #444; border-radius: 12px;
-            padding: 10px 4px; font-size: 0.75rem; font-weight: bold; cursor: pointer; transition: 0.1s;
-        }
-        .c-btn:active { background: #333; transform: scale(0.95); }
-        .lcd-screen {
-            background: #0055ff; color: #d6f5ff; border: 4px solid #002288; border-radius: 10px;
-            width: 280px; height: 160px; padding: 12px; display: flex; flex-direction: column;
-            justify-content: space-between; box-shadow: inset 0 0 20px rgba(0,0,0,0.6);
-            font-family: monospace; text-shadow: 0 0 5px rgba(214,245,255,0.8);
-        }
-        .lcd-top { display: flex; justify-content: space-between; font-size: 1rem; font-weight: bold; }
-        .lcd-mid { display: flex; justify-content: space-around; align-items: center; font-size: 1.6rem; font-weight: bold; }
-        .lcd-bot { display: flex; justify-content: space-between; font-size: 0.9rem; font-weight: bold; }
 
         .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,152,0,0.3); border-top-color: #ff9800; border-radius: 50%; animation: win7-spin 0.8s linear infinite; vertical-align: middle; }
         @keyframes win7-spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
@@ -289,7 +267,6 @@ HTML_TEMPLATE = """
     </div>
 
     <div style="margin: 5px auto 10px auto; max-width: 450px;">
-        <button id="btn-view" class="btn btn-view" onclick="toggleView()">SWITCH TO CLASSIC VIEW</button>
         <button class="btn btn-shutdown" onclick="shutdownPi()">🔴 SHUTDOWN PI</button>
     </div>
 
@@ -379,42 +356,7 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
-    <div id="view-classic" class="hidden">
-        <div class="classic-panel">
-            <div class="classic-side">
-                <button class="c-btn" onclick="toggleCmd('HEATER')">⏻ POWER</button>
-                <button class="c-btn" onclick="setTarget(163, 'none')">🌡 TEMP</button>
-                <button class="c-btn" onclick="toggleSequence()">⏱ TIME</button>
-                <button class="c-btn" onclick="toggleMode()">⚙ AUTO/MAN</button>
-            </div>
-
-            <div class="lcd-screen">
-                <div class="lcd-top">
-                    <span id="lcd-step">S1</span>
-                    <span id="lcd-timer">00:00</span>
-                </div>
-                <div class="lcd-mid">
-                    <div><span id="lcd-temp-target">67</span>°</div>
-                    <div><span id="lcd-temp-actual">18</span>°C</div>
-                </div>
-                <div class="lcd-bot">
-                    <span id="lcd-mode">AUTO</span>
-                    <span id="lcd-state">⏸</span>
-                </div>
-            </div>
-
-            <div class="classic-side">
-                <button class="c-btn" onclick="adjustTemp(1)">➕ UP</button>
-                <button class="c-btn" onclick="adjustTemp(-1)">➖ DOWN</button>
-                <button class="c-btn" onclick="toggleBoil()">♨ S1-S6</button>
-                <button class="c-btn" onclick="toggleSequence()">▶/⏸ RUN</button>
-            </div>
-        </div>
-    </div>
-
     <script>
-        let currentView = 'ADVANCED';
-
         function formatTime(totalSec) {
             const h = Math.floor(totalSec / 3600).toString().padStart(2, '0');
             const m = Math.floor((totalSec % 3600) / 60).toString().padStart(2, '0');
@@ -431,7 +373,6 @@ HTML_TEMPLATE = """
             fetch('/api/status')
                 .then(res => res.json())
                 .then(data => {
-                    // Actualización de tiempos Uptime en pantalla
                     if (data.sys_uptime) document.getElementById("sys-uptime").innerText = data.sys_uptime;
                     if (data.pi_boot_time) document.getElementById("pi-boot").innerText = data.pi_boot_time;
                     if (data.svc_uptime) document.getElementById("svc-uptime").innerText = data.svc_uptime;
@@ -529,33 +470,9 @@ HTML_TEMPLATE = """
                     document.getElementById('seq-elapsed').innerText = '[' + formatTime(elapsed) + ' / ' + formatTime(total) + ']';
                     document.getElementById('seq-timer').innerText = formatTime(remaining);
 
-                    document.getElementById('lcd-temp-actual').innerText = Math.round(tempAct);
-                    document.getElementById('lcd-temp-target').innerText = Math.round(tempSet);
-                    document.getElementById('lcd-mode').innerText = data.mode;
-                    document.getElementById('lcd-step').innerText = data.sequence_active ? ('S' + (data.current_step + 1)) : 'MAN';
-                    document.getElementById('lcd-timer').innerText = formatTime(remaining).substring(3);
-                    document.getElementById('lcd-state').innerText = data.sequence_active ? '▶' : '⏸';
-
                     document.getElementById('chk-delay').checked = data.delayed_start_enabled;
                     document.getElementById('time-delay').value = data.delayed_start_time;
                 });
-        }
-
-        function toggleView() {
-            const normal = document.getElementById('view-normal');
-            const classic = document.getElementById('view-classic');
-            const btnV = document.getElementById('btn-view');
-            if (currentView === 'ADVANCED') {
-                currentView = 'CLASSIC';
-                normal.classList.add('hidden');
-                classic.classList.remove('hidden');
-                btnV.innerText = 'SWITCH TO ADVANCED VIEW';
-            } else {
-                currentView = 'ADVANCED';
-                classic.classList.add('hidden');
-                normal.classList.remove('hidden');
-                btnV.innerText = 'SWITCH TO CLASSIC VIEW';
-            }
         }
 
         function shutdownPi() {
@@ -658,18 +575,6 @@ HTML_TEMPLATE = """
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({action: 'SET_TEMP', value: val})
-            });
-        }
-
-        function adjustTemp(amount) {
-            fetch('/api/status').then(res => res.json()).then(data => {
-                let currentT = data.temp_objetivo !== undefined ? data.temp_objetivo : data.SET;
-                let newTarget = currentT + amount;
-                fetch('/api/command', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({action: 'SET_TEMP', value: newTarget})
-                });
             });
         }
 
